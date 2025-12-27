@@ -17,3 +17,4 @@ log/
 tools/*.jpg
 tools/*.mp4
 pre_training.py
+.claude/

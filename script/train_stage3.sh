@@ -32,7 +32,7 @@ deepspeed --include localhost:0,1,2,3 --master_port 29511 fine_tuning.py \
 ## pose only setting
 #ckpt_path=out/stage1_pretraining/best_checkpoint.pth
 #
-#deepspeed --include localhost:0,1,2,3 --master_port 29511 fine_tuning.py \
+#deepspeed --include localhost:0 --master_port 29511 fine_tuning.py \
 #  --batch-size 8 \
 #  --gradient-accumulation-steps 1 \
 #  --epochs 20 \
