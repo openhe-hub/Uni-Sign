@@ -531,6 +531,13 @@ def get_args_parser():
     # select label smooth
     parser.add_argument("--label_smoothing", default=0.2, type=float)
 
+    # Hungarian loss for CSLR
+    parser.add_argument('--use_hungarian', action='store_true',
+                        help='Enable Hungarian loss for CSLR task (order-invariant gloss matching)')
+    parser.add_argument('--hungarian_weight', type=float, default=0.5,
+                        help='Weight for Hungarian loss in combined loss (0.0-1.0, default: 0.5)')
+
+
     # online inference
     parser.add_argument("--online_video", default="", type=str)
 

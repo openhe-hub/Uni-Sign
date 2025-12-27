@@ -48,7 +48,7 @@ def download_files(output_directory, download_pose):
                 continue
 
             command = ["wget", "-O", file_path, url]
-            unzip_command = ["unzip", "-j", file_path, "-d", video_folder]
+            unzip_command = ["unzip", "-j", file_path, "-d", pose_folder]
             try:
                 subprocess.run(command, check=True)
                 print(f"file {url} saved to {file_path}")

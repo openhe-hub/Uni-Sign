@@ -138,8 +138,23 @@ class Uni_Sign(nn.Module):
 
         self.mt5_model = MT5ForConditionalGeneration.from_pretrained(mt5_path)
         self.mt5_tokenizer = T5Tokenizer.from_pretrained(mt5_path, legacy=False)
-    
-        
+
+        # Hungarian loss for CSLR task
+        if hasattr(args, 'use_hungarian') and args.use_hungarian and args.task == "CSLR":
+            from hungarian_loss import HungarianMatcher, HungarianLoss
+
+            matcher = HungarianMatcher(cost_class=1.0)
+            self.hungarian_loss = HungarianLoss(
+                matcher=matcher,
+                vocab_size=self.mt5_tokenizer.vocab_size,
+                label_smoothing=args.label_smoothing
+            )
+            self.hungarian_weight = getattr(args, 'hungarian_weight', 0.5)
+            print(f"Hungarian loss enabled with weight: {self.hungarian_weight}")
+        else:
+            self.hungarian_loss = None
+
+
     def _init_weights(self, m):
         if isinstance(m, nn.Linear):
             trunc_normal_(m.weight, std=.02)
@@ -297,8 +312,29 @@ class Uni_Sign(nn.Module):
         label = labels.reshape(-1)
         out_logits = out['logits']
         logits = out_logits.reshape(-1,out_logits.shape[-1])
+
+        # Standard cross-entropy loss
         loss_fct = torch.nn.CrossEntropyLoss(label_smoothing=self.args.label_smoothing, ignore_index=-100)
-        loss = loss_fct(logits, label.to(out_logits.device, non_blocking=True))
+        loss_ce = loss_fct(logits, label.to(out_logits.device, non_blocking=True))
+
+        # Add Hungarian loss for CSLR task if enabled
+        if self.hungarian_loss is not None and self.args.task == "CSLR":
+            # Use original logits (not flattened) for Hungarian matching
+            # Shape: (B, L, V)
+            loss_hungarian = self.hungarian_loss(out_logits, labels.to(out_logits.device))
+
+            # Combine losses with weighted sum
+            loss = (1 - self.hungarian_weight) * loss_ce + self.hungarian_weight * loss_hungarian
+
+            # Store individual losses for logging
+            stack_out_losses = {
+                'loss_ce': loss_ce.item(),
+                'loss_hungarian': loss_hungarian.item(),
+            }
+        else:
+            loss = loss_ce
+            stack_out_losses = {'loss_ce': loss_ce.item()}
+
 
         stack_out = {
             # use for inference
