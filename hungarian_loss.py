@@ -72,7 +72,8 @@ class HungarianMatcher(nn.Module):
 
             # Total cost
             C = self.cost_class * cost_class
-            C = C.cpu().numpy()
+            # Convert to float32 first (BFloat16 is not supported by numpy)
+            C = C.float().cpu().numpy()
 
             # Solve optimal assignment using Hungarian algorithm
             src_idx, tgt_idx = linear_sum_assignment(C)
