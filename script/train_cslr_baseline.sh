@@ -5,7 +5,7 @@
 # Task: Continuous Sign Language Recognition (CSLR)
 
 output_dir=out/cslr_baseline
-ckpt_path=out/stage1_pretraining/best_checkpoint.pth
+ckpt_path=out/stage1_pretraining_csl_daily/best_checkpoint.pth
 
 # Create output directory if not exists
 mkdir -p $output_dir

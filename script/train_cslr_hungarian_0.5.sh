@@ -6,7 +6,7 @@
 # Hungarian loss helps handle order-invariant gloss matching
 
 output_dir=out/cslr_hungarian_0.5
-ckpt_path=out/stage1_pretraining/best_checkpoint.pth
+ckpt_path=out/stage1_pretraining_csl_daily/best_checkpoint.pth
 
 # Hungarian weight: 0.5 means equal weight for CE and Hungarian loss
 # Total loss = 0.5 * CrossEntropy + 0.5 * Hungarian
