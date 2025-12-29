@@ -538,6 +538,10 @@ def get_args_parser():
                         help='Weight for Hungarian loss in combined loss (0.0-1.0, default: 0.5)')
     parser.add_argument('--shuffle_labels', action='store_true',
                         help='Randomly shuffle gloss order during training (for testing order-invariance)')
+    parser.add_argument('--use_no_object', action='store_true',
+                        help='Enable no object matching for Hungarian loss (penalize excess predictions)')
+    parser.add_argument('--no_object_weight', type=float, default=0.1,
+                        help='Weight for no object loss (default: 0.1)')
 
 
     # online inference

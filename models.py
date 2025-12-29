@@ -143,14 +143,35 @@ class Uni_Sign(nn.Module):
         if hasattr(args, 'use_hungarian') and args.use_hungarian and args.task == "CSLR":
             from hungarian_loss import HungarianMatcher, HungarianLoss
 
-            matcher = HungarianMatcher(cost_class=1.0)
+            # Check if no_object matching is enabled
+            use_no_object = getattr(args, 'use_no_object', False)
+
+            matcher = HungarianMatcher(
+                cost_class=1.0,
+                use_no_object=use_no_object
+            )
+
+            # Setup no_object parameters if enabled
+            if use_no_object:
+                # Use PAD token as "no object" token
+                no_object_token_id = self.mt5_tokenizer.pad_token_id
+                no_object_weight = getattr(args, 'no_object_weight', 0.1)
+            else:
+                no_object_token_id = None
+                no_object_weight = 0.1
+
             self.hungarian_loss = HungarianLoss(
                 matcher=matcher,
                 vocab_size=self.mt5_tokenizer.vocab_size,
-                label_smoothing=args.label_smoothing
+                label_smoothing=args.label_smoothing,
+                no_object_token_id=no_object_token_id,
+                no_object_weight=no_object_weight
             )
             self.hungarian_weight = getattr(args, 'hungarian_weight', 0.5)
+
             print(f"Hungarian loss enabled with weight: {self.hungarian_weight}")
+            if use_no_object:
+                print(f"  No object matching enabled (token_id={no_object_token_id}, weight={no_object_weight})")
         else:
             self.hungarian_loss = None
 

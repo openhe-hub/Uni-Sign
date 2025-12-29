@@ -18,11 +18,13 @@ class HungarianMatcher(nn.Module):
 
     Args:
         cost_class: Weight for classification cost in matching
+        use_no_object: If True, unmatched predictions are assigned to "no object"
     """
 
-    def __init__(self, cost_class: float = 1.0):
+    def __init__(self, cost_class: float = 1.0, use_no_object: bool = False):
         super().__init__()
         self.cost_class = cost_class
+        self.use_no_object = use_no_object
 
     @torch.no_grad()
     def forward(self, outputs, targets):
@@ -38,7 +40,7 @@ class HungarianMatcher(nn.Module):
         Returns:
             List of tuples (src_idx, tgt_idx) for each batch sample
             src_idx: matched prediction indices
-            tgt_idx: matched target indices
+            tgt_idx: matched target indices (-1 indicates "no object" if use_no_object=True)
         """
         bs, num_queries = outputs.shape[:2]
 
@@ -78,6 +80,23 @@ class HungarianMatcher(nn.Module):
             # Solve optimal assignment using Hungarian algorithm
             src_idx, tgt_idx = linear_sum_assignment(C)
 
+            # Handle unmatched predictions (if enabled and L > T)
+            if self.use_no_object and num_queries > len(valid_tgt):
+                # Find unmatched prediction indices
+                all_src_idx = set(range(num_queries))
+                matched_src_idx = set(src_idx.tolist())
+                unmatched_src_idx = sorted(all_src_idx - matched_src_idx)
+
+                if len(unmatched_src_idx) > 0:
+                    # Mark unmatched predictions as "no object" (-1)
+                    unmatched_src = list(unmatched_src_idx)
+                    unmatched_tgt = [-1] * len(unmatched_src)
+
+                    # Combine matched and unmatched results
+                    import numpy as np
+                    src_idx = np.concatenate([src_idx, unmatched_src])
+                    tgt_idx = np.concatenate([tgt_idx, unmatched_tgt])
+
             # Convert to tensors
             src_idx = torch.as_tensor(src_idx, dtype=torch.int64)
             tgt_idx = torch.as_tensor(tgt_idx, dtype=torch.int64)
@@ -96,13 +115,18 @@ class HungarianLoss(nn.Module):
         matcher: HungarianMatcher instance
         vocab_size: Size of vocabulary
         label_smoothing: Label smoothing factor
+        no_object_token_id: Token ID for "no object" (e.g., PAD or EOS)
+        no_object_weight: Weight for no object loss (default: 0.1)
     """
 
-    def __init__(self, matcher, vocab_size, label_smoothing=0.0):
+    def __init__(self, matcher, vocab_size, label_smoothing=0.0,
+                 no_object_token_id=None, no_object_weight=0.1):
         super().__init__()
         self.matcher = matcher
         self.vocab_size = vocab_size
         self.label_smoothing = label_smoothing
+        self.no_object_token_id = no_object_token_id
+        self.no_object_weight = no_object_weight
 
     def loss_labels(self, outputs, targets, indices):
         """
@@ -114,35 +138,47 @@ class HungarianLoss(nn.Module):
             indices: Matching indices from Hungarian matcher
 
         Returns:
-            Dictionary containing the loss
+            Dictionary containing the loss(es)
         """
-        # Get batch and source indices for matched predictions
-        idx = self._get_src_permutation_idx(indices)
+        # Separate normal matches (tgt_idx >= 0) and no object matches (tgt_idx == -1)
+        normal_batch_idx = []
+        normal_src_idx = []
+        normal_target_classes = []
 
-        # Gather matched target tokens
-        target_classes_list = []
-        for i, (_, tgt_idx) in enumerate(indices):
+        no_object_batch_idx = []
+        no_object_src_idx = []
+
+        for i, (src_idx, tgt_idx) in enumerate(indices):
             tgt = targets[i]
             valid_tgt = tgt[tgt != -100]
 
-            if len(tgt_idx) > 0:
-                target_classes_list.append(valid_tgt[tgt_idx])
-            else:
-                # No matches for this sample
-                target_classes_list.append(
-                    torch.tensor([], dtype=torch.long, device=tgt.device)
-                )
+            # Separate matches by type
+            normal_mask = tgt_idx >= 0
+            no_object_mask = tgt_idx == -1
 
-        # Check if we have any valid matches
-        valid_matches = [t for t in target_classes_list if len(t) > 0]
+            # Process normal matches
+            if normal_mask.any():
+                matched_src = src_idx[normal_mask]
+                matched_tgt = tgt_idx[normal_mask]
 
-        if len(valid_matches) > 0:
-            target_classes = torch.cat(target_classes_list)
+                normal_batch_idx.append(torch.full_like(matched_src, i))
+                normal_src_idx.append(matched_src)
+                normal_target_classes.append(valid_tgt[matched_tgt])
 
-            # Get matched prediction logits
-            src_logits = outputs[idx]  # (num_matched, V)
+            # Process no object matches
+            if no_object_mask.any():
+                matched_src = src_idx[no_object_mask]
+                no_object_batch_idx.append(torch.full_like(matched_src, i))
+                no_object_src_idx.append(matched_src)
 
-            # Compute cross-entropy loss
+        # Compute normal classification loss
+        if len(normal_batch_idx) > 0:
+            batch_idx = torch.cat(normal_batch_idx)
+            src_idx = torch.cat(normal_src_idx)
+            target_classes = torch.cat(normal_target_classes)
+
+            src_logits = outputs[batch_idx, src_idx]
+
             loss_ce = nn.functional.cross_entropy(
                 src_logits,
                 target_classes,
@@ -150,10 +186,39 @@ class HungarianLoss(nn.Module):
                 reduction='mean'
             )
         else:
-            # No valid matches in batch, return zero loss
             loss_ce = torch.tensor(0.0, device=outputs.device, requires_grad=True)
 
-        return {'loss_ce_hungarian': loss_ce}
+        # Compute no object loss (if enabled and there are no object matches)
+        if self.no_object_token_id is not None and len(no_object_batch_idx) > 0:
+            batch_idx = torch.cat(no_object_batch_idx)
+            src_idx = torch.cat(no_object_src_idx)
+
+            src_logits = outputs[batch_idx, src_idx]
+
+            # Target is no_object_token_id for all unmatched predictions
+            no_object_targets = torch.full(
+                (src_logits.shape[0],),
+                self.no_object_token_id,
+                dtype=torch.long,
+                device=outputs.device
+            )
+
+            loss_no_object = nn.functional.cross_entropy(
+                src_logits,
+                no_object_targets,
+                reduction='mean'
+            )
+
+            # Weighted combination
+            total_loss = loss_ce + self.no_object_weight * loss_no_object
+
+            return {
+                'loss_ce_hungarian': total_loss,
+                'loss_ce_normal': loss_ce,
+                'loss_no_object': loss_no_object
+            }
+        else:
+            return {'loss_ce_hungarian': loss_ce}
 
     def _get_src_permutation_idx(self, indices):
         """
