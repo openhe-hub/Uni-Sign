@@ -536,6 +536,8 @@ def get_args_parser():
                         help='Enable Hungarian loss for CSLR task (order-invariant gloss matching)')
     parser.add_argument('--hungarian_weight', type=float, default=0.5,
                         help='Weight for Hungarian loss in combined loss (0.0-1.0, default: 0.5)')
+    parser.add_argument('--shuffle_labels', action='store_true',
+                        help='Randomly shuffle gloss order during training (for testing order-invariance)')
 
 
     # online inference

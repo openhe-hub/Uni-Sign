@@ -449,7 +449,13 @@ class S2T_Dataset(Base_Dataset):
 
         text = sample['text']
         if "gloss" in sample.keys():
-            gloss = " ".join(sample['gloss'])
+            gloss_list = sample['gloss']
+            # Shuffle gloss order if enabled (for testing order-invariance)
+            if hasattr(self.args, 'shuffle_labels') and self.args.shuffle_labels:
+                import random
+                gloss_list = gloss_list.copy()  # Don't modify original data
+                random.shuffle(gloss_list)
+            gloss = " ".join(gloss_list)
         else:
             gloss = ''
         

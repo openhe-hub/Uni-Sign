@@ -1,4 +1,4 @@
-ckpt_path=out/stage3_finetuning/best_checkpoint.pth
+ckpt_path=out/cslr_baseline/best_checkpoint.pth
 
 # single gpu inference
 # RGB-pose setting
