@@ -8,6 +8,7 @@ Based on DETR's Hungarian matcher, adapted for CSLR task.
 
 import torch
 import torch.nn as nn
+import numpy as np
 from scipy.optimize import linear_sum_assignment
 
 
@@ -19,12 +20,18 @@ class HungarianMatcher(nn.Module):
     Args:
         cost_class: Weight for classification cost in matching
         use_no_object: If True, unmatched predictions are assigned to "no object"
+        allow_null_match: If True, add a dummy "no object" column so predictions
+                          can explicitly match to empty targets
+        no_object_cost: Cost for matching to the dummy column
     """
 
-    def __init__(self, cost_class: float = 1.0, use_no_object: bool = False):
+    def __init__(self, cost_class: float = 1.0, use_no_object: bool = False,
+                 allow_null_match: bool = False, no_object_cost: float = 2.0):
         super().__init__()
         self.cost_class = cost_class
         self.use_no_object = use_no_object
+        self.allow_null_match = allow_null_match
+        self.no_object_cost = no_object_cost
 
     @torch.no_grad()
     def forward(self, outputs, targets):
@@ -72,6 +79,20 @@ class HungarianMatcher(nn.Module):
             # Shape: (L, T)
             cost_class = -out_prob[start_idx:end_idx, valid_tgt]
 
+            # Optional dummy "no object" column so predictions can choose to
+            # match an empty target even when L == T
+            if self.use_no_object and self.allow_null_match:
+                dummy_cost = torch.full(
+                    (num_queries, 1),
+                    self.no_object_cost,
+                    device=cost_class.device,
+                    dtype=cost_class.dtype,
+                )
+                cost_class = torch.cat([cost_class, dummy_cost], dim=1)
+                dummy_col_idx = cost_class.shape[1] - 1
+            else:
+                dummy_col_idx = None
+
             # Total cost
             C = self.cost_class * cost_class
             # Convert to float32 first (BFloat16 is not supported by numpy)
@@ -79,6 +100,10 @@ class HungarianMatcher(nn.Module):
 
             # Solve optimal assignment using Hungarian algorithm
             src_idx, tgt_idx = linear_sum_assignment(C)
+
+            # If a dummy column exists, mark those matches as "no object"
+            if dummy_col_idx is not None:
+                tgt_idx = np.where(tgt_idx == dummy_col_idx, -1, tgt_idx)
 
             # Handle unmatched predictions (if enabled and L > T)
             if self.use_no_object and num_queries > len(valid_tgt):
@@ -93,7 +118,6 @@ class HungarianMatcher(nn.Module):
                     unmatched_tgt = [-1] * len(unmatched_src)
 
                     # Combine matched and unmatched results
-                    import numpy as np
                     src_idx = np.concatenate([src_idx, unmatched_src])
                     tgt_idx = np.concatenate([tgt_idx, unmatched_tgt])
 

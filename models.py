@@ -145,10 +145,14 @@ class Uni_Sign(nn.Module):
 
             # Check if no_object matching is enabled
             use_no_object = getattr(args, 'use_no_object', False)
+            allow_null_match = getattr(args, 'allow_null_match', False)
+            no_object_cost = getattr(args, 'no_object_cost', 2.0)
 
             matcher = HungarianMatcher(
                 cost_class=1.0,
-                use_no_object=use_no_object
+                use_no_object=use_no_object,
+                allow_null_match=allow_null_match,
+                no_object_cost=no_object_cost,
             )
 
             # Setup no_object parameters if enabled
@@ -172,6 +176,8 @@ class Uni_Sign(nn.Module):
             print(f"Hungarian loss enabled with weight: {self.hungarian_weight}")
             if use_no_object:
                 print(f"  No object matching enabled (token_id={no_object_token_id}, weight={no_object_weight})")
+                if allow_null_match:
+                    print(f"  Null-match column enabled (cost={no_object_cost})")
         else:
             self.hungarian_loss = None
 
@@ -390,4 +396,3 @@ def get_requires_grad_dict(model):
     params_to_update = {k: v for k, v in model.state_dict().items() if param_requires_grad.get(k, True)}
 
     return params_to_update
-

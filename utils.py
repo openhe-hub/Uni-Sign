@@ -542,6 +542,10 @@ def get_args_parser():
                         help='Enable no object matching for Hungarian loss (penalize excess predictions)')
     parser.add_argument('--no_object_weight', type=float, default=0.1,
                         help='Weight for no object loss (default: 0.1)')
+    parser.add_argument('--allow_null_match', action='store_true',
+                        help='Add a dummy no-object column in Hungarian matching (allows explicit empty matches)')
+    parser.add_argument('--no_object_cost', type=float, default=2.0,
+                        help='Cost for matching to dummy no-object column (when allow_null_match is enabled)')
 
 
     # online inference

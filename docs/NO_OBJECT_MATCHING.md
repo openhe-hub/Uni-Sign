@@ -49,16 +49,18 @@ Loss计算:
 ```bash
 --use_no_object          # 启用no object matching
 --no_object_weight 0.1   # no object loss的权重（默认0.1）
+--allow_null_match       # 在匹配矩阵加入一列 dummy，允许预测直接匹配“空目标”
+--no_object_cost 2.0     # dummy 列的匹配成本（默认2.0，成本越低越容易匹配为空）
 ```
 
 ### 训练脚本示例
 
 ```bash
-# 不启用no object（默认）
-./script/train_cslr_hungarian_1.0_shuffled.sh
-
-# 启用no object
+# 启用 no object（保持标签原顺序）
 ./script/train_cslr_hungarian_1.0_shuffled_no_object.sh
+
+# 启用 no object + 空集匹配（允许部分预测显式对齐到PAD）
+./script/train_cslr_hungarian_1.0_shuffled_no_object.sh --allow_null_match --no_object_cost 2.0
 ```
 
 ### 手动使用
@@ -69,9 +71,10 @@ deepspeed fine_tuning.py \
   --dataset CSL_Daily \
   --use_hungarian \
   --hungarian_weight 1.0 \
-  --shuffle_labels \
   --use_no_object \           # 启用no object matching
   --no_object_weight 0.1      # no object loss权重
+  --allow_null_match \        # 可选：允许部分预测直接匹配到PAD
+  --no_object_cost 2.0        # 可选：dummy列成本
 ```
 
 ## 参数调优
@@ -101,6 +104,7 @@ deepspeed fine_tuning.py \
 **实现位置**：
 - `hungarian_loss.py`: HungarianMatcher的`use_no_object`参数
 - `hungarian_loss.py`: HungarianLoss的`no_object_token_id`和`no_object_weight`
+- `hungarian_loss.py`: `allow_null_match`/`no_object_cost` 控制 dummy 列
 - `models.py`: 自动传入PAD token ID
 - `utils.py`: 命令行参数
 
@@ -115,9 +119,9 @@ if L > T and use_no_object:
 
 ## 注意事项
 
-1. **只在L > T时生效**：当预测数量≤目标数量时，所有预测都会被匹配，no object不起作用
+1. **默认只在L > T时生效**：当预测数量≤目标数量时，所有预测都会被匹配，no object不起作用；若开启 `--allow_null_match`，即使 L == T 也允许部分预测匹配到PAD（成本由 `--no_object_cost` 控制）
 
-2. **与shuffled labels配合使用**：在打乱数据的实验中，建议启用no object以获得更准确的结果
+2. **标签顺序**：建议保持标签真实顺序；乱序会破坏语义对齐，导致训练困难
 
 3. **计算开销**：no object matching增加少量计算（查找未匹配索引），但可忽略不计
 
